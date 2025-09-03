@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Flipbook</title>
+<meta name="description" content="Flipbook — simple, beautiful PDF storybook reader with page turns and read-aloud." />
+<style>
+  :root{
+    --bg1:#0b1129; --bg2:#0a0f23; --ink:#e8ecff; --muted:#a9b6ff;
+    --glass:rgba(14,18,40,.75); --line:#27305d; --btn:#121735; --btnBorder:#2b315b;
+    --accent1:#60a5fa; --accent2:#22d3ee; --accent3:#a78bfa; --brandGlow:rgba(96,165,250,.18);
+    --shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; color:var(--ink);
+    background:radial-gradient(1200px 600px at 50% -10%, #1a214a 0%, var(--bg1) 55%, var(--bg2) 100%);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;
+    overflow-x:hidden;
+  }
+
+  /* Top wordmark and search section */
+  .hero{
+    max-width:980px; margin:0 auto; padding:72px 18px 24px;
+    display:grid; grid-template-columns:1fr 200px; gap:32px; align-items:center;
+  }
+  @media (max-width:900px){ .hero{ grid-template-columns:1fr } }
+
+  .brand{ text-align:center; padding-top:20px; }
+  .logo{
+    font-weight:900; letter-spacing:.5px; margin:24px 0 26px;
+    font-size:64px; line-height:1.05;
+    background:conic-gradient(from -20deg, var(--accent1), var(--accent2), var(--accent3), var(--accent1));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 10px 44px var(--brandGlow);
+  }
+
+  .searchwrap{
+    width:min(720px,92vw); margin:0 auto;
+    background:var(--glass); border:1px solid var(--line);
+    backdrop-filter:blur(8px) saturate(140%);
+    border-radius:999px; padding:10px; display:flex; gap:10px; align-items:center; box-shadow:var(--shadow);
+  }
+  input[type="search"]{
+    flex:1; min-width:140px; padding:14px 16px; border:0; outline:none; border-radius:999px; background:transparent; color:var(--ink); font-size:16px;
+  }
+  .btn{
+    border:1px solid var(--btnBorder); background:var(--btn); color:var(--ink);
+    padding:12px 16px; border-radius:999px; cursor:pointer; transition:.2s; box-shadow:var(--shadow);
+  }
+  .btn:hover{ transform:translateY(-1px); background:#151b3f; }
+  .btn.primary{ background:linear-gradient(135deg,#2563eb,#7c3aed); border-color:transparent }
+
+  .hint{
+    margin:16px auto 0; width:fit-content; text-align:center; color:var(--muted);
+    display:flex; flex-direction:column; gap:6px; line-height:1.15;
+  }
+  .hint .or{ color:#cfe1ff; opacity:.6; font-size:.9rem }
+
+  /* Right cover rail */
+  .rail{
+    position:relative; height:62vh; min-height:420px; max-height:700px;
+    border-left:1px dashed rgba(255,255,255,.12);
+    padding-left:18px; margin:0 auto; width:200px;
+  }
+  @media (max-width:900px){ .rail{ display:none } }
+
+  .rail-inner{ position:absolute; inset:0 0 0 18px; overflow:hidden; }
+  .covers{
+    position:absolute; left:0; right:0; bottom:0;
+    display:flex; flex-direction:column; gap:14px; will-change:transform;
+    transition:transform .6s ease;
+  }
+  .cover-card{
+    width:160px; height:240px; border-radius:16px; overflow:hidden; cursor:pointer;
+    box-shadow:0 10px 30px rgba(0,0,0,.4); border:1px solid rgba(255,255,255,.08);
+    background:#0e1538;
+  }
+  .cover-card img{ width:100%; height:100%; object-fit:cover; display:block; }
+
+  /* Library (appears after uploads) */
+  #library{ width:min(1100px,94vw); margin:18px auto 42px; padding:0 6px; display:none; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:16px; }
+  .card{
+    background:linear-gradient(180deg,#121735,#0f1433); border:1px solid #202553; border-radius:16px; overflow:hidden; box-shadow:var(--shadow);
+    display:flex; flex-direction:column; position:relative;
+  }
+  .card .cover{ width:100%; height:0; padding-bottom:66%; background:#0e1538; position:relative; }
+  .card .cover img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+  .meta{ padding:12px 12px 8px; text-align:left }
+  .title{ font-weight:700; font-size:1rem; line-height:1.3 }
+  .author{ color:#aab7ff; font-size:.9rem; margin-top:2px }
+  .actions{ display:flex; gap:8px; padding:10px 12px 14px; margin-top:auto }
+  .actions .btn{ flex:1; justify-content:center; display:flex; align-items:center; gap:.4rem }
+  .danger{ border-color:#783232; background:#3a0f16 }
+  .danger:hover{ background:#48131b }
+  .note{ color:#ffd18f; font-size:.85rem; padding:0 12px 10px }
+
+  /* Detail view (SPA “new page”) */
+  #detail{ display:none; }
+  #detail.open{ display:block; }
+  .detail-wrap{ max-width:980px; margin:0 auto; padding:16px 18px 40px; }
+  .detail-grid{ display:grid; grid-template-columns:320px 1fr; gap:24px; align-items:flex-start; }
+  @media (max-width:900px){ .detail-grid{ grid-template-columns:1fr } }
+  .detail-cover{
+    width:100%; max-width:360px; aspect-ratio:2/3; border-radius:18px; overflow:hidden;
+    border:1px solid rgba(255,255,255,.1); box-shadow:var(--shadow); background:#0e1538;
+  }
+  .detail-cover img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .detail-title{ font-size:1.6rem; font-weight:800; margin:2px 0 6px }
+  .detail-author{ color:var(--muted); margin-bottom:12px }
+  .detail-actions{ display:flex; flex-wrap:wrap; gap:10px; margin:12px 0 10px }
+
+  /* Flipbook viewer (first 5 pages) */
+  #viewer{ position:fixed; inset:0; background:rgba(4,7,20,.85); backdrop-filter:blur(6px); display:none; align-items:center; justify-content:center; padding:24px; z-index:30 }
+  #viewer.open{ display:flex }
+  .book-shell{ width:min(1000px,95vw); height:min(680px,82vh); display:grid; grid-template-columns:1fr; gap:16px }
+  .toolbar{ display:flex; align-items:center; gap:10px; justify-content:space-between }
+  .toolbar .left,.toolbar .right{ display:flex; align-items:center; gap:8px }
+  .book{ position:relative; perspective:1600px; border-radius:18px; background:#0b1028; border:1px solid #23284e; box-shadow:var(--shadow); overflow:hidden }
+  .spread{ position:absolute; inset:0; display:grid; grid-template-columns:1fr 1fr }
+  .page{ position:relative; border-right:1px solid #1c2147 }
+  .page:last-child{ border-right:0; border-left:1px solid #1c2147 }
+  canvas{ display:block; width:100%; height:100%; object-fit:contain; background:#0c132e }
+  .pill{ font-size:.85rem; border:1px solid #27305d; background:#0e1436; padding:.35rem .6rem; border-radius:999px }
+</style>
+</head>
+<body>
+
+  <!-- HERO: wordmark + search (left) | cover rail (right) -->
+  <section class="hero">
+    <div>
+      <div class="brand">
+        <div class="logo" aria-label="Flipbook">Flipbook</div>
+        <div class="searchwrap">
+          <input id="q" type="search" placeholder="Search by title or author" />
+          <button id="searchBtn" class="btn">Search</button>
+          <label class="btn" style="cursor:pointer">
+            <input id="addFile" type="file" accept="application/pdf" hidden>
+            Add PDF
+          </label>
+          <button id="addUrlBtn" class="btn">Add by URL</button>
+        </div>
+        <!-- Two-line hint with 'Or' between -->
+        <div class="hint">
+          <div>Upload a PDF to add a book.</div>
+          <div class="or">Or</div>
+          <div>Use Search to filter your uploaded books.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right cover rail -->
+    <aside class="rail" aria-label="Featured covers">
+      <div class="rail-inner">
+        <div id="coversCol" class="covers"></div>
+      </div>
+    </aside>
+  </section>
+
+  <!-- User Library (only appears when you add PDFs/URLs) -->
+  <main id="library" aria-label="Your uploaded books">
+    <div id="grid" class="grid"></div>
+  </main>
+
+  <!-- Detail view (SPA route) -->
+  <section id="detail">
+    <div class="detail-wrap">
+      <div class="searchwrap" style="margin-bottom:18px; width:min(720px,92vw)">
+        <input id="q2" type="search" placeholder="Search by title or author" />
+        <button id="searchBtn2" class="btn">Search</button>
+        <button id="closeDetail" class="btn">✖ Close</button>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-cover"><img id="detailCover" alt="Book cover"></div>
+        <div>
+          <div class="detail-title" id="detailTitle">Title</div>
+          <div class="detail-author" id="detailAuthor">Author</div>
+          <div class="detail-actions">
+            <button id="openFirst5" class="btn primary">📖 Open (first 5 pages)</button>
+            <button id="listenBtn" class="btn">🔊 Listen (current page)</button>
+            <a id="viewBtn" class="btn" target="_blank" rel="noopener">👁️ Open PDF</a>
+            <a id="downloadBtn" class="btn">⬇ Download PDF</a>
+          </div>
+          <div id="detailDesc" style="color:#cfe1ff; opacity:.85; margin-top:6px"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Flipbook Viewer -->
+  <div id="viewer" role="dialog" aria-modal="true" aria-label="Book reader">
+    <div class="book-shell">
+      <div class="toolbar">
+        <div class="left">
+          <button class="btn" id="closeViewer">✖ Close</button>
+          <button class="btn" id="prevBtn">⬅ Prev</button>
+          <button class="btn" id="nextBtn">Next ➡</button>
+          <span class="pill" id="pageInfo">Page 1 / 1</span>
+        </div>
+        <div class="right">
+          <button class="btn" id="readBtn">🔊 Read page</button>
+        </div>
+      </div>
+      <div class="book">
+        <div class="spread">
+          <div class="page"><canvas id="left"></canvas></div>
+          <div class="page"><canvas id="right"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
+<script>
+window.addEventListener('load', () => {
+  // Elements
+  const grid = document.getElementById('grid');
+  const library = document.getElementById('library');
+  const search = document.getElementById('q');
+  const searchBtn = document.getElementById('searchBtn');
+  const addFile = document.getElementById('addFile');
+  const addUrlBtn = document.getElementById('addUrlBtn');
+
+  const coversCol = document.getElementById('coversCol');
+
+  const detail = document.getElementById('detail');
+  const q2 = document.getElementById('q2');
+  const searchBtn2 = document.getElementById('searchBtn2');
+  const closeDetail = document.getElementById('closeDetail');
+  const detailCover = document.getElementById('detailCover');
+  const detailTitle = document.getElementById('detailTitle');
+  const detailAuthor = document.getElementById('detailAuthor');
+  const detailDesc = document.getElementById('detailDesc');
+  const openFirst5 = document.getElementById('openFirst5');
+  const listenBtn = document.getElementById('listenBtn');
+  const viewBtn = document.getElementById('viewBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  const viewer = document.getElementById('viewer');
+  const closeViewer = document.getElementById('closeViewer');
+  const leftCanvas = document.getElementById('left');
+  const rightCanvas = document.getElementById('right');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const pageInfo = document.getElementById('pageInfo');
+  const readBtn = document.getElementById('readBtn');
+
+  // ---------- Persistence helpers ----------
+  const KEY = 'flipbook.library.v1';
+  function saveLibrary(){ localStorage.setItem(KEY, JSON.stringify(LIBRARY)); }
+  function loadLibrary(){
+    try {
+      const raw = localStorage.getItem(KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  }
+
+  // -------- Demo covers for the right rail (SVGs) --------
+  const demoCovers = [
+    ["Prime Numbers — Book 1","John Lincoln Wilborn", makeCover("#6ee7b7","#34d399","#065f46")],
+    ["Prime Numbers — Book 2","John Lincoln Wilborn", makeCover("#93c5fd","#60a5fa","#1e3a8a")],
+    ["Castle of Tens","A. Writer", makeCover("#fca5a5","#f87171","#7f1d1d")],
+    ["The Curious Zero","B. Author", makeCover("#fcd34d","#fbbf24","#78350f")],
+    ["Math Friends","C. Teacher", makeCover("#c7d2fe","#a78bfa","#4c1d95")],
+    ["Numbers Parade","D. Storyteller", makeCover("#fbcfe8","#f472b6","#831843")],
+  ];
+  let coverNodes = [];
+  function renderRail(){
+    coversCol.innerHTML = '';
+    coverNodes = demoCovers.map((d, i) => {
+      const el = document.createElement('div');
+      el.className = 'cover-card';
+      el.innerHTML = `<img src="${d[2]}" alt="${d[0]} cover">`;
+      el.title = `${d[0]} — ${d[1]}`;
+      el.onclick = () => openDetail({ id:'demo'+i, title:d[0], author:d[1], cover:d[2], href:'#', description:'Sample book preview.' });
+      coversCol.appendChild(el);
+      return el;
+    });
+  }
+  renderRail();
+  // Animate upward every 3s
+  let offset = 0;
+  setInterval(() => {
+    if(!coverNodes.length) return;
+    const first = coverNodes[0];
+    const h = first.getBoundingClientRect().height + 14;
+    offset -= h;
+    coversCol.style.transform = `translateY(${offset}px)`;
+    setTimeout(() => {
+      coversCol.appendChild(first);
+      coverNodes.push(coverNodes.shift());
+      offset += h;
+      coversCol.style.transition = 'none';
+      coversCol.style.transform = `translateY(${offset}px)`;
+      void coversCol.offsetWidth;
+      coversCol.style.transition = 'transform .6s ease';
+    }, 620);
+  }, 3000);
+
+  // -------- User Library (persistent) --------
+  let LIBRARY = loadLibrary(); // {id,title,author,href,cover?,desc?}
+  function renderLibrary(){
+    const q = (search.value || '').toLowerCase();
+    const items = LIBRARY.filter(b => !q || (b.title+' '+(b.author||'')).toLowerCase().includes(q));
+    grid.innerHTML = '';
+    items.forEach(b => grid.appendChild(bookCard(b)));
+    library.style.display = LIBRARY.length ? 'block' : 'none';
+  }
+
+  function bookCard(b){
+    const el = document.createElement('article');
+    el.className = 'card';
+    const isBlob = (b.href||'').startsWith('blob:');
+    el.innerHTML = `
+      <div class="cover">${b.cover ? `<img loading="lazy" src="${b.cover}" alt="Cover of ${b.title}">` : ''}</div>
+      <div class="meta">
+        <div class="title">${b.title}</div>
+        <div class="author">${b.author || ''}</div>
+      </div>
+      ${isBlob ? `<div class="note">Tip: Use “Add by URL” to save a permanent link for this book.</div>` : ``}
+      <div class="actions">
+        <button class="btn open">Open</button>
+        ${b.href && b.href !== '#' ? `<a class="btn" href="${b.href}" target="_blank" rel="noopener">Quick View</a>` : `<button class="btn" disabled>Quick View</button>`}
+        <button class="btn danger remove">Remove</button>
+      </div>
+    `;
+    el.querySelector('.open').onclick = (e)=>{ e.stopPropagation(); openDetail(b); };
+    el.querySelector('.remove').onclick = (e)=>{ e.stopPropagation(); removeBook(b.id); };
+    return el;
+  }
+
+  function removeBook(id){
+    LIBRARY = LIBRARY.filter(x => x.id !== id);
+    saveLibrary();
+    renderLibrary();
+  }
+
+  searchBtn.onclick = renderLibrary;
+  search.addEventListener('keydown', e => { if(e.key === 'Enter') renderLibrary(); });
+
+  // Upload a local PDF (non-persistent URL)
+  addFile.addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const title = prompt('Book title?', file.name.replace(/\.pdf$/i,'')) || 'Untitled';
+    const author = prompt('Author? (optional)','');
+    const url = URL.createObjectURL(file); // blob: (not persistent)
+    const id = crypto.randomUUID();
+    LIBRARY.unshift({ id, title, author, href:url, cover:'', description:'' });
+    saveLibrary();
+    renderLibrary();
+    openDetail(LIBRARY[0]);
+    addFile.value='';
+  });
+
+  // Add by URL (persistent)
+  addUrlBtn.onclick = async ()=>{
+    const title = prompt('Book title?');
+    if(!title) return;
+    const author = prompt('Author? (optional)','') || '';
+    const href = prompt('Direct PDF URL (https://...)');
+    if(!href) return;
+    const cover = prompt('Cover image URL (optional, https://...)','') || '';
+    const desc = prompt('Short description (optional)','') || '';
+    const id = crypto.randomUUID();
+    LIBRARY.unshift({ id, title, author, href, cover, description:desc });
+    saveLibrary();
+    renderLibrary();
+    openDetail(LIBRARY[0]);
+  };
+
+  // -------- Detail “page” --------
+  let currentBook = null;
+  function openDetail(book){
+    currentBook = book;
+    detailCover.src = book.cover || makeCover("#93c5fd","#60a5fa","#1e3a8a");
+    detailTitle.textContent = book.title || 'Untitled';
+    detailAuthor.textContent = book.author || '';
+    detailDesc.textContent = book.description || '';
+    viewBtn.href = (book.href && book.href !== '#') ? book.href : '#';
+
+    downloadBtn.onclick = async (e) => {
+      e.preventDefault();
+      if(!book.href || book.href === '#'){ alert('No PDF URL available for this item.'); return; }
+      try {
+        const res = await fetch(book.href, { mode:'cors' });
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (book.title || 'book') + '.pdf';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch(err){
+        alert('Download failed. Opening instead.');
+        window.open(book.href, '_blank');
+      }
+    };
+
+    openFirst5.onclick = () => {
+      if(!book.href || book.href === '#'){ alert('No PDF URL available for this item.'); return; }
+      openViewer(book, 5);
+    };
+    listenBtn.onclick = () => {
+      if(!book.href || book.href === '#'){ alert('No PDF URL available for this item.'); return; }
+      if(viewer.classList.contains('open')) readBtn.click(); else openViewer(book, 5);
+    };
+
+    detail.classList.add('open');
+    window.scrollTo({ top:0, behavior:'smooth' });
+  }
+  closeDetail.onclick = () => detail.classList.remove('open');
+  searchBtn2.onclick = () => { document.getElementById('q').value = q2.value; renderLibrary(); }
+  q2.addEventListener('keydown', e => { if(e.key==='Enter'){ document.getElementById('q').value=q2.value; renderLibrary(); } });
+
+  // -------- Flipbook Viewer (first N pages) --------
+  let pdfDoc = null, current = 1, total = 1, maxPages = 5;
+
+  function openViewer(book, firstN){
+    maxPages = firstN || 5;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    viewer.classList.add('open'); document.body.style.overflow = 'hidden';
+    loadPdf(book.href);
+  }
+  closeViewer.onclick = () => { viewer.classList.remove('open'); document.body.style.overflow=''; speechSynthesis.cancel(); };
+
+  async function loadPdf(url){
+    try{
+      speechSynthesis.cancel();
+      const loading = await pdfjsLib.getDocument(url).promise;
+      pdfDoc = loading; total = Math.min(pdfDoc.numPages, maxPages); current = 1;
+      await renderSpread();
+    }catch(err){
+      alert('Failed to load PDF: ' + err.message + '\nIf this is a local upload, it only works in this tab/session. Use “Add by URL” for persistent books.');
+    }
+  }
+
+  function fitCanvas(canvas){
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const w = canvas.clientWidth*dpr, h = canvas.clientHeight*dpr;
+    if(canvas.width!==w || canvas.height!==h){ canvas.width=w; canvas.height=h; }
+    return {w,h};
+  }
+  async function renderPageTo(canvas, pageNum){
+    const page = await pdfDoc.getPage(pageNum);
+    const viewport = page.getViewport({scale:1});
+    const {w,h} = fitCanvas(canvas);
+    const scale = Math.min(w/viewport.width, h/viewport.height);
+    const vp = page.getViewport({scale});
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height);
+    const renderContext = { canvasContext: ctx, viewport: vp, transform:[1,0,0,1,(w-vp.width)/2,(h-vp.height)/2] };
+    await page.render(renderContext).promise;
+  }
+  async function renderSpread(){
+    pageInfo.textContent = `Page ${current} / ${total}`;
+    await renderPageTo(leftCanvas, Math.max(1,current));
+    if(current+1<=total) await renderPageTo(rightCanvas, current+1);
+    else { const ctx=rightCanvas.getContext('2d'); ctx.clearRect(0,0,rightCanvas.width,rightCanvas.height); }
+  }
+  prevBtn.onclick = ()=>{ if(current-2>=1){ current-=2; renderSpread(); } };
+  nextBtn.onclick = ()=>{ if(current+2<=total){ current+=2; renderSpread(); } };
+
+  // Read-aloud of current page
+  readBtn.onclick = async ()=>{
+    try {
+      speechSynthesis.cancel();
+      const page = await pdfDoc.getPage(current);
+      const tc = await page.getTextContent();
+      const text = tc.items.map(i=>i.str).join(' ').replace(/\s+/g,' ').trim();
+      if(!text){ alert('No selectable text found on this page.'); return; }
+      const utter = new SpeechSynthesisUtterance(text);
+      speechSynthesis.speak(utter);
+    } catch(e){ alert('Unable to read page.'); }
+  };
+
+  // Helpers
+  function makeCover(c1,c2,c3){
+    const svg = encodeURIComponent(`
+      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 600'>
+        <defs><linearGradient id='g' x1='0' x2='1'><stop offset='0' stop-color='${c1}'/><stop offset='1' stop-color='${c2}'/></linearGradient></defs>
+        <rect width='400' height='600' fill='${c3}'/>
+        <rect x='20' y='20' width='360' height='560' rx='28' fill='url(#g)' opacity='0.85'/>
+        <circle cx='320' cy='120' r='90' fill='#ffffff' opacity='0.08'/>
+        <circle cx='120' cy='460' r='120' fill='#ffffff' opacity='0.08'/>
+      </svg>`);
+    return `data:image/svg+xml;charset=utf-8,${svg}`;
+  }
+
+  // Keyboard helpers
+  document.addEventListener('keydown', (e)=>{
+    if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); search.focus(); }
+    if(!viewer.classList.contains('open')) return;
+    if(e.key==='ArrowRight') nextBtn.click();
+    if(e.key==='ArrowLeft') prevBtn.click();
+    if(e.key.toLowerCase()==='r') readBtn.click();
+    if(e.key==='Escape') closeViewer.click();
+  });
+
+  // Initial render from localStorage
+  renderLibrary();
+});
+</script>
+</body>
+</html>
